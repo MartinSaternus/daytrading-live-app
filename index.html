@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0f1216">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>DayTrading Live</title>
+<style>
+  :root { --bg:#0f1216; --panel:#171b21; --panel2:#1d232b; --text:#e6e9ee;
+    --muted:#8b95a3; --line:#2a323c; --pos:#3fb98a; --neg:#e0645f; --accent:#5aa9e6; --warn:#e0a13f; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f4f6f9; --panel:#fff; --panel2:#eef1f5; --text:#1a1f26;
+      --muted:#66707d; --line:#dce1e8; --pos:#1a9e6e; --neg:#d0453f; --accent:#2e7fc4; } }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; background:var(--bg); color:var(--text);
+    font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
+  .wrap { max-width:640px; margin:0 auto; padding:16px 14px 40px; }
+  h1 { font-size:18px; margin:0; display:flex; align-items:center; gap:8px; }
+  .pill { font-size:10px; padding:2px 7px; border-radius:6px; background:var(--panel2); color:var(--muted); letter-spacing:.05em; }
+  .status { display:flex; align-items:center; gap:8px; margin:6px 0 16px; color:var(--muted); font-size:12px; }
+  .dot { width:9px; height:9px; border-radius:50%; background:var(--pos); flex:none; }
+  .dot.stale { background:var(--warn); } .dot.halt { background:var(--neg); }
+  .banner { padding:10px 14px; border-radius:10px; margin-bottom:14px; font-size:13px; display:none; }
+  .banner.show { display:block; }
+  .banner.halt { background:color-mix(in srgb,var(--neg) 15%,transparent); border:1px solid var(--neg); color:var(--neg); }
+  .banner.pos { background:color-mix(in srgb,var(--accent) 12%,transparent); border:1px solid var(--accent); }
+  .cards { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:14px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px 14px; }
+  .card .label { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.04em; }
+  .card .value { font-size:23px; font-weight:650; margin-top:3px; }
+  .card .value.pos { color:var(--pos); } .card .value.neg { color:var(--neg); }
+  .card .sub { color:var(--muted); font-size:11px; margin-top:1px; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:13px 15px; margin-bottom:12px; }
+  .panel h2 { font-size:12px; margin:0 0 9px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+  .row { display:flex; flex-wrap:wrap; gap:14px; font-size:14px; }
+  .row b { color:var(--text); }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th,td { text-align:right; padding:6px 6px; border-bottom:1px solid var(--line); }
+  th:first-child,td:first-child { text-align:left; }
+  th { color:var(--muted); font-weight:500; font-size:11px; }
+  td.pos { color:var(--pos); } td.neg { color:var(--neg); }
+  .tag { display:inline-block; padding:1px 6px; border-radius:5px; font-size:10px; background:var(--panel2); color:var(--muted); }
+  .log { font-family:ui-monospace,Menlo,monospace; font-size:11px; color:var(--muted); max-height:180px; overflow-y:auto; white-space:pre-wrap; }
+  .empty { color:var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>DayTrading Live <span class="pill" id="mode">PAPER</span></h1>
+  <div class="status"><span class="dot stale" id="dot"></span><span id="statusline">verbinde …</span></div>
+  <div class="banner" id="banner"></div>
+  <div class="cards" id="cards"></div>
+  <div class="panel"><h2>Aktuelle Position</h2><div id="position" class="empty">—</div></div>
+  <div class="panel"><h2>Live-Buch</h2><div id="book" class="empty">—</div></div>
+  <div class="panel"><h2>Trades heute</h2><div style="overflow-x:auto"><table id="trades"></table></div></div>
+  <div class="panel"><h2>Log</h2><div class="log" id="log"></div></div>
+</div>
+
+<script type="module">
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+// Oeffentliche Werte — anon-Key darf nur lesen (durch RLS abgesichert).
+const SUPABASE_URL = 'https://btvjlpaiyqmyfordyfgw.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ0dmpscGFpeXFteWZvcmR5Zmd3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM5OTAyODgsImV4cCI6MjA5OTU2NjI4OH0.W8Ek0HwE6E0EqbrsULDknHM8E6sk7I2NBrkJepiKIUU';
+
+const sb = createClient(SUPABASE_URL, SUPABASE_ANON);
+const fmt = (x,d=2)=> x==null?'—':(x>=0?'+':'')+Number(x).toFixed(d);
+let lastData = 0;
+
+async function fetchState(){
+  const { data, error } = await sb.from('live_state').select('state,updated_at').eq('id',1).single();
+  if(!error && data){ lastData = Date.now(); render(data.state); }
+}
+
+// Realtime: sofortige Updates bei Aenderung der Zeile.
+sb.channel('live_state_ch')
+  .on('postgres_changes', { event:'UPDATE', schema:'public', table:'live_state' },
+      payload => { lastData = Date.now(); render(payload.new.state); })
+  .subscribe();
+
+// Polling als Fallback/Garantie (falls Realtime nicht durchkommt).
+fetchState();
+setInterval(fetchState, 2000);
+setInterval(updateDot, 1000);
+
+function updateDot(){
+  const dot=document.getElementById('dot'), sl=document.getElementById('statusline');
+  const age=(Date.now()-lastData)/1000;
+  if(lastData===0){ dot.className='dot stale'; return; }
+  if(age>10){ dot.className='dot stale'; sl.textContent='letztes Update vor '+(age|0)+'s (läuft die Session?)'; }
+}
+
+function render(S){
+  if(!S || !S.updated){ document.getElementById('statusline').textContent='warte auf ersten Push der Session …'; return; }
+  const dot=document.getElementById('dot'), sl=document.getElementById('statusline');
+  dot.className='dot'+(S.halted?' halt':'');
+  sl.textContent=`${S.account||''} · ${S.symbol||''} · ${new Date(S.updated).toLocaleTimeString()}`;
+
+  const banner=document.getElementById('banner');
+  if(S.halted){ banner.className='banner show halt'; banner.textContent='ANGEHALTEN: '+(S.halt_reason||''); }
+  else if(S.in_position){ banner.className='banner show pos'; banner.textContent='Position offen'; }
+  else banner.className='banner';
+
+  document.getElementById('cards').innerHTML=[
+    ['P&L heute', fmt(S.total_r,1)+' R', (S.total_r>=0?'pos':'neg'), fmt(S.total_usd,0)+' USD'],
+    ['Status', S.halted?'HALT':(S.in_position?'im Markt':'bereit'), (S.halted?'neg':''), (S.trades_today||0)+' Trades heute'],
+    ['Trades', S.n_trades||0, '', 'Win '+Math.round((S.win_rate||0)*100)+' %'],
+    ['Grüne Tage', '—', '', 'heute '+((S.total_r||0)>=0?'grün':'rot')],
+  ].map(([l,v,c,s])=>`<div class="card"><div class="label">${l}</div>
+     <div class="value ${c}">${v}</div><div class="sub">${s}</div></div>`).join('');
+
+  const pos=document.getElementById('position');
+  if(S.in_position && S.position){ const p=S.position;
+    pos.className='row';
+    pos.innerHTML=`<span><b>${p.direction}</b> ${p.remaining} MNQ</span><span>Einstieg <b>${p.entry_px}</b></span>
+      <span>Stop <b>${p.stop_px}</b></span><span>${p.scaled?'Runner':'voll'}</span>`;
+  } else { pos.className='empty'; pos.textContent='keine offene Position'; }
+
+  const b=S.last_bar, book=document.getElementById('book');
+  if(b){ book.className='row';
+    book.innerHTML=`<span>Bid <b>${b.best_bid}</b></span><span>Ask <b>${b.best_ask}</b></span>
+      <span>imb5 <b>${fmt(b.imbalance_5)}</b></span><span>Vol <b>${b.volume}</b></span><span>CVD <b>${fmt(b.cvd,0)}</b></span>`;
+  } else { book.className='empty'; book.textContent='—'; }
+
+  const rows=(S.trades||[]).slice().reverse();
+  document.getElementById('trades').innerHTML=
+    `<tr><th>Ein</th><th>Richtung</th><th>Aus</th><th>R</th><th>USD</th></tr>`+
+    (rows.map(t=>{const rc=t.r_multiple>=0?'pos':'neg';
+      return `<tr><td>${(t.entry_ts||'').slice(11,19)}</td><td>${t.direction>0?'Long':'Short'}</td>
+      <td><span class="tag">${t.exit_reason}</span></td><td class="${rc}">${fmt(t.r_multiple)}</td>
+      <td class="${rc}">${fmt(t.pnl_usd,0)}</td></tr>`;}).join('')
+      || `<tr><td colspan="5" class="empty">noch keine Trades</td></tr>`);
+
+  document.getElementById('log').textContent=(S.log||[]).join('\n');
+}
+
+// Service Worker fuer Installierbarkeit (optional, still).
+if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
+</script>
+</body>
+</html>
