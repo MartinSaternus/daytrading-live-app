@@ -47,11 +47,33 @@
   .tag { display:inline-block; padding:1px 6px; border-radius:5px; font-size:10px; background:var(--panel2); color:var(--muted); }
   .log { font-family:ui-monospace,Menlo,monospace; font-size:11px; color:var(--muted); max-height:180px; overflow-y:auto; white-space:pre-wrap; }
   .empty { color:var(--muted); }
+  /* Login */
+  #login { max-width:360px; margin:14vh auto 0; padding:0 20px; text-align:center; }
+  #login h1 { justify-content:center; margin-bottom:6px; }
+  #login p { color:var(--muted); font-size:13px; margin:0 0 20px; }
+  #login input { width:100%; padding:12px 14px; border-radius:10px; border:1px solid var(--line);
+    background:var(--panel); color:var(--text); font-size:16px; margin-bottom:10px; }
+  #login button { width:100%; padding:12px; border-radius:10px; border:0; background:var(--accent);
+    color:#fff; font-size:15px; font-weight:600; }
+  #login .msg { margin-top:14px; font-size:13px; color:var(--muted); min-height:20px; }
+  .logout { float:right; font-size:11px; color:var(--muted); background:none; border:0; }
+  .hidden { display:none !important; }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <h1>DayTrading Live <span class="pill" id="mode">PAPER</span></h1>
+<!-- Login-Ansicht -->
+<div id="login" class="hidden">
+  <h1>DayTrading Live <span class="pill">PAPER</span></h1>
+  <p>Anmeldung per Magic-Link an deine E-Mail.</p>
+  <input id="email" type="email" inputmode="email" autocomplete="email" placeholder="E-Mail-Adresse">
+  <button id="sendlink">Magic-Link senden</button>
+  <div class="msg" id="loginmsg"></div>
+</div>
+
+<!-- App-Ansicht -->
+<div id="appview" class="wrap hidden">
+  <h1>DayTrading Live <span class="pill" id="mode">PAPER</span>
+    <button class="logout" id="logout">abmelden</button></h1>
   <div class="status"><span class="dot stale" id="dot"></span><span id="statusline">verbinde …</span></div>
   <div class="banner" id="banner"></div>
   <div class="cards" id="cards"></div>
@@ -64,71 +86,92 @@
 <script type="module">
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-// Oeffentliche Werte — anon-Key darf nur lesen (durch RLS abgesichert).
+// Oeffentliche Werte. Der anon-Key kann OHNE Login nichts lesen (RLS verlangt
+// die eingeloggte, freigegebene E-Mail).
 const SUPABASE_URL = 'https://btvjlpaiyqmyfordyfgw.supabase.co';
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ0dmpscGFpeXFteWZvcmR5Zmd3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM5OTAyODgsImV4cCI6MjA5OTU2NjI4OH0.W8Ek0HwE6E0EqbrsULDknHM8E6sk7I2NBrkJepiKIUU';
 
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON);
+const $ = id => document.getElementById(id);
 const fmt = (x,d=2)=> x==null?'—':(x>=0?'+':'')+Number(x).toFixed(d);
-let lastData = 0;
+let lastData = 0, pollTimer = null, channel = null;
+
+// --- Auth ---------------------------------------------------------------
+function showLogin(){ $('login').classList.remove('hidden'); $('appview').classList.add('hidden'); }
+function showApp(){ $('login').classList.add('hidden'); $('appview').classList.remove('hidden'); startData(); }
+
+$('sendlink').addEventListener('click', async () => {
+  const email = $('email').value.trim();
+  if(!email){ $('loginmsg').textContent = 'Bitte E-Mail eingeben.'; return; }
+  $('sendlink').disabled = true; $('loginmsg').textContent = 'sende …';
+  const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: location.href.split('#')[0] } });
+  $('sendlink').disabled = false;
+  $('loginmsg').textContent = error ? ('Fehler: ' + error.message)
+    : 'Link gesendet. Öffne die Mail auf diesem Gerät und tippe auf den Link.';
+});
+
+$('logout').addEventListener('click', async () => { await sb.auth.signOut(); location.reload(); });
+
+sb.auth.onAuthStateChange((_ev, session) => { session ? showApp() : showLogin(); });
+const { data:{ session } } = await sb.auth.getSession();
+session ? showApp() : showLogin();
+
+// --- Daten --------------------------------------------------------------
+function startData(){
+  if(pollTimer) return;              // nur einmal starten
+  fetchState();
+  pollTimer = setInterval(fetchState, 2000);
+  setInterval(updateDot, 1000);
+  channel = sb.channel('live_state_ch')
+    .on('postgres_changes', { event:'UPDATE', schema:'public', table:'live_state' },
+        p => { lastData = Date.now(); render(p.new.state); })
+    .subscribe();
+}
 
 async function fetchState(){
-  const { data, error } = await sb.from('live_state').select('state,updated_at').eq('id',1).single();
+  const { data, error } = await sb.from('live_state').select('state').eq('id',1).single();
   if(!error && data){ lastData = Date.now(); render(data.state); }
 }
 
-// Realtime: sofortige Updates bei Aenderung der Zeile.
-sb.channel('live_state_ch')
-  .on('postgres_changes', { event:'UPDATE', schema:'public', table:'live_state' },
-      payload => { lastData = Date.now(); render(payload.new.state); })
-  .subscribe();
-
-// Polling als Fallback/Garantie (falls Realtime nicht durchkommt).
-fetchState();
-setInterval(fetchState, 2000);
-setInterval(updateDot, 1000);
-
 function updateDot(){
-  const dot=document.getElementById('dot'), sl=document.getElementById('statusline');
   const age=(Date.now()-lastData)/1000;
-  if(lastData===0){ dot.className='dot stale'; return; }
-  if(age>10){ dot.className='dot stale'; sl.textContent='letztes Update vor '+(age|0)+'s (läuft die Session?)'; }
+  if(lastData===0) return;
+  if(age>10){ $('dot').className='dot stale'; $('statusline').textContent='letztes Update vor '+(age|0)+'s (läuft die Session?)'; }
 }
 
 function render(S){
-  if(!S || !S.updated){ document.getElementById('statusline').textContent='warte auf ersten Push der Session …'; return; }
-  const dot=document.getElementById('dot'), sl=document.getElementById('statusline');
-  dot.className='dot'+(S.halted?' halt':'');
-  sl.textContent=`${S.account||''} · ${S.symbol||''} · ${new Date(S.updated).toLocaleTimeString()}`;
+  if(!S || !S.updated){ $('statusline').textContent='warte auf ersten Push der Session …'; return; }
+  $('dot').className='dot'+(S.halted?' halt':'');
+  $('statusline').textContent=`${S.account||''} · ${S.symbol||''} · ${new Date(S.updated).toLocaleTimeString()}`;
 
-  const banner=document.getElementById('banner');
+  const banner=$('banner');
   if(S.halted){ banner.className='banner show halt'; banner.textContent='ANGEHALTEN: '+(S.halt_reason||''); }
   else if(S.in_position){ banner.className='banner show pos'; banner.textContent='Position offen'; }
   else banner.className='banner';
 
-  document.getElementById('cards').innerHTML=[
+  $('cards').innerHTML=[
     ['P&L heute', fmt(S.total_r,1)+' R', (S.total_r>=0?'pos':'neg'), fmt(S.total_usd,0)+' USD'],
     ['Status', S.halted?'HALT':(S.in_position?'im Markt':'bereit'), (S.halted?'neg':''), (S.trades_today||0)+' Trades heute'],
     ['Trades', S.n_trades||0, '', 'Win '+Math.round((S.win_rate||0)*100)+' %'],
-    ['Grüne Tage', '—', '', 'heute '+((S.total_r||0)>=0?'grün':'rot')],
+    ['P&L-Tag', (S.total_r||0)>=0?'grün':'rot', ((S.total_r||0)>=0?'pos':'neg'), fmt(S.total_r,1)+' R'],
   ].map(([l,v,c,s])=>`<div class="card"><div class="label">${l}</div>
      <div class="value ${c}">${v}</div><div class="sub">${s}</div></div>`).join('');
 
-  const pos=document.getElementById('position');
+  const pos=$('position');
   if(S.in_position && S.position){ const p=S.position;
     pos.className='row';
     pos.innerHTML=`<span><b>${p.direction}</b> ${p.remaining} MNQ</span><span>Einstieg <b>${p.entry_px}</b></span>
       <span>Stop <b>${p.stop_px}</b></span><span>${p.scaled?'Runner':'voll'}</span>`;
   } else { pos.className='empty'; pos.textContent='keine offene Position'; }
 
-  const b=S.last_bar, book=document.getElementById('book');
+  const b=S.last_bar, book=$('book');
   if(b){ book.className='row';
     book.innerHTML=`<span>Bid <b>${b.best_bid}</b></span><span>Ask <b>${b.best_ask}</b></span>
       <span>imb5 <b>${fmt(b.imbalance_5)}</b></span><span>Vol <b>${b.volume}</b></span><span>CVD <b>${fmt(b.cvd,0)}</b></span>`;
   } else { book.className='empty'; book.textContent='—'; }
 
   const rows=(S.trades||[]).slice().reverse();
-  document.getElementById('trades').innerHTML=
+  $('trades').innerHTML=
     `<tr><th>Ein</th><th>Richtung</th><th>Aus</th><th>R</th><th>USD</th></tr>`+
     (rows.map(t=>{const rc=t.r_multiple>=0?'pos':'neg';
       return `<tr><td>${(t.entry_ts||'').slice(11,19)}</td><td>${t.direction>0?'Long':'Short'}</td>
@@ -136,10 +179,9 @@ function render(S){
       <td class="${rc}">${fmt(t.pnl_usd,0)}</td></tr>`;}).join('')
       || `<tr><td colspan="5" class="empty">noch keine Trades</td></tr>`);
 
-  document.getElementById('log').textContent=(S.log||[]).join('\n');
+  $('log').textContent=(S.log||[]).join('\n');
 }
 
-// Service Worker fuer Installierbarkeit (optional, still).
 if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
 </script>
 </body>
