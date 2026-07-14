@@ -50,6 +50,20 @@
   .tag { display:inline-block; padding:1px 6px; border-radius:5px; font-size:10px; background:var(--panel2); color:var(--muted); }
   .log { font-family:ui-monospace,Menlo,monospace; font-size:11px; color:var(--muted); max-height:180px; overflow-y:auto; white-space:pre-wrap; }
   .empty { color:var(--muted); }
+  /* Imbalance-Anzeige */
+  .book-nums { margin-bottom:14px; }
+  .imbhead { display:flex; align-items:baseline; gap:8px; margin-bottom:8px; }
+  .imbtitle { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+  .imbraw { color:var(--muted); font-size:10px; font-variant-numeric:tabular-nums; }
+  .imbval { font-size:20px; font-weight:700; font-variant-numeric:tabular-nums; margin-left:auto; }
+  .imbsig { font-size:10px; font-weight:600; padding:1px 7px; border-radius:5px; background:var(--panel2); color:var(--muted); }
+  .imbsig.long { background:color-mix(in srgb,var(--pos) 22%,transparent); color:var(--pos); }
+  .imbsig.short { background:color-mix(in srgb,var(--neg) 22%,transparent); color:var(--neg); }
+  #imbmeter,#imbhist { width:100%; display:block; overflow:visible; }
+  .gl { font-size:9px; fill:var(--muted); font-variant-numeric:tabular-nums; }
+  .zl { font-size:9px; font-weight:600; }
+  .imbfoot { display:flex; gap:14px; margin-top:8px; font-size:10px; color:var(--muted); }
+  .gdot { display:inline-block; width:7px; height:7px; border-radius:50%; vertical-align:middle; margin-right:4px; }
   /* Login */
   #login { max-width:360px; margin:14vh auto 0; padding:0 20px; text-align:center; }
   #login h1 { justify-content:center; margin-bottom:6px; }
@@ -82,7 +96,43 @@
   <div class="banner" id="banner"></div>
   <div class="cards" id="cards"></div>
   <div class="panel"><h2>Aktuelle Position</h2><div id="position" class="empty">—</div></div>
-  <div class="panel"><h2>Live-Buch</h2><div id="book" class="empty">—</div></div>
+  <div class="panel"><h2>Live-Buch</h2>
+    <div id="book" class="row book-nums empty">—</div>
+    <div id="imbwrap" class="hidden">
+      <div class="imbhead">
+        <span class="imbtitle">Imbalance imb5 · <span class="imbraw" id="imbraw">roh —</span></span>
+        <span class="imbval" id="imbval">+0.00</span>
+        <span class="imbsig sig" id="imbsig">neutral</span>
+      </div>
+      <svg id="imbmeter" viewBox="0 0 320 46" aria-hidden="true">
+        <rect x="0" y="14" width="45.7" height="18" rx="5" fill="var(--pos)" opacity="0.10"/>
+        <rect x="274.3" y="14" width="45.7" height="18" rx="5" fill="var(--neg)" opacity="0.10"/>
+        <rect x="0" y="21" width="320" height="4" rx="2" fill="var(--line)"/>
+        <rect id="imbfill" x="160" y="21" width="0" height="4" rx="2" fill="var(--accent)"/>
+        <line x1="45.7" y1="10" x2="45.7" y2="36" stroke="var(--pos)" stroke-width="1.3" stroke-dasharray="3 3"/>
+        <line x1="274.3" y1="10" x2="274.3" y2="36" stroke="var(--neg)" stroke-width="1.3" stroke-dasharray="3 3"/>
+        <line x1="160" y1="7" x2="160" y2="39" stroke="var(--muted)" stroke-width="1.3"/>
+        <circle id="imbraw2" cx="160" cy="23" r="3.5" fill="none" stroke="var(--muted)" stroke-width="1.4"/>
+        <circle id="imbcur" cx="160" cy="23" r="6" fill="var(--accent)" stroke="var(--panel)" stroke-width="2"/>
+        <text class="gl" x="46" y="45" text-anchor="middle">-0.5</text>
+        <text class="gl" x="160" y="45" text-anchor="middle">0</text>
+        <text class="gl" x="274" y="45" text-anchor="middle">+0.5</text>
+        <text class="zl" x="2" y="10" fill="var(--pos)">◄ LONG</text>
+        <text class="zl" x="318" y="10" text-anchor="end" fill="var(--neg)">SHORT ►</text>
+      </svg>
+      <svg id="imbhist" viewBox="0 0 320 46" aria-hidden="true">
+        <line x1="0" y1="6.6" x2="320" y2="6.6" stroke="var(--neg)" stroke-width="1" stroke-dasharray="2 3" opacity="0.55"/>
+        <line x1="0" y1="23" x2="320" y2="23" stroke="var(--muted)" stroke-width="1" opacity="0.4"/>
+        <line x1="0" y1="39.4" x2="320" y2="39.4" stroke="var(--pos)" stroke-width="1" stroke-dasharray="2 3" opacity="0.55"/>
+        <polyline id="imbtrail" fill="none" stroke="var(--accent)" stroke-width="1.5" points=""/>
+      </svg>
+      <div class="imbfoot">
+        <span><span class="gdot" style="background:var(--pos)"></span>≤ −0.5 → Long</span>
+        <span><span class="gdot" style="background:var(--neg)"></span>≥ +0.5 → Short</span>
+        <span>Verlauf ~letzte Minuten</span>
+      </div>
+    </div>
+  </div>
   <div class="panel"><h2>Trades heute</h2><div style="overflow-x:auto"><table id="trades"></table></div></div>
   <div class="panel"><h2>Log</h2><div class="log" id="log"></div></div>
 </div>
@@ -145,6 +195,42 @@ function updateDot(){
   if(age>10){ $('dot').className='dot stale'; $('statusline').textContent='letztes Update vor '+(age|0)+'s (läuft die Session?)'; }
 }
 
+// --- Imbalance-Anzeige (±0.7 gezoomt, Trigger bei ±0.5) -----------------
+const IMB_MAX=0.7, IMB_CX=160, IMB_MID=23, IMB_H=23;
+const imbX = v => IMB_CX + Math.max(-IMB_MAX,Math.min(IMB_MAX,v))/IMB_MAX*IMB_CX;
+const imbY = v => IMB_MID - Math.max(-IMB_MAX,Math.min(IMB_MAX,v))/IMB_MAX*IMB_H;
+let imbHist=[];
+function updateImbalance(S){
+  const wrap=$('imbwrap');
+  const raw = S.last_bar ? S.last_bar.imbalance_5 : null;
+  let sm = (S.imb5_smoothed!=null) ? S.imb5_smoothed : raw;   // geglättet bevorzugt
+  const thr = S.imb5_threshold || 0.5;
+  if(sm==null){ wrap.classList.add('hidden'); return; }
+  wrap.classList.remove('hidden');
+
+  const col = sm<=-thr ? 'var(--pos)' : sm>=thr ? 'var(--neg)' : 'var(--accent)';
+  const px = imbX(sm);
+  const cur=$('imbcur'); cur.setAttribute('cx',px.toFixed(1)); cur.setAttribute('fill',col);
+  const fill=$('imbfill');
+  if(px>=IMB_CX){ fill.setAttribute('x',IMB_CX); fill.setAttribute('width',(px-IMB_CX).toFixed(1)); }
+  else { fill.setAttribute('x',px.toFixed(1)); fill.setAttribute('width',(IMB_CX-px).toFixed(1)); }
+  fill.setAttribute('fill',col);
+  if(raw!=null) $('imbraw2').setAttribute('cx',imbX(raw).toFixed(1));
+
+  $('imbval').textContent=(sm>=0?'+':'')+sm.toFixed(2); $('imbval').style.color=col;
+  $('imbraw').textContent='roh '+(raw==null?'—':(raw>=0?'+':'')+raw.toFixed(2));
+  const sig=$('imbsig');
+  sig.className='imbsig sig'+(sm<=-thr?' long':sm>=thr?' short':'');
+  sig.textContent = sm<=-thr?'LONG-Signal':sm>=thr?'SHORT-Signal':'neutral';
+
+  imbHist.push(sm); if(imbHist.length>100) imbHist.shift();
+  if(imbHist.length>1){
+    const n=imbHist.length;
+    $('imbtrail').setAttribute('points',
+      imbHist.map((v,i)=>(i/(n-1)*320).toFixed(1)+','+imbY(v).toFixed(1)).join(' '));
+  }
+}
+
 function render(S){
   if(!S || !S.updated){ $('statusline').textContent='warte auf ersten Push der Session …'; return; }
   $('dot').className='dot'+(S.halted?' halt':'');
@@ -171,10 +257,11 @@ function render(S){
   } else { pos.className='empty'; pos.textContent='keine offene Position'; }
 
   const b=S.last_bar, book=$('book');
-  if(b){ book.className='row';
+  if(b){ book.className='row book-nums';
     book.innerHTML=`<span>Bid <b>${b.best_bid}</b></span><span>Ask <b>${b.best_ask}</b></span>
-      <span>imb5 <b>${fmt(b.imbalance_5)}</b></span><span>Vol <b>${b.volume}</b></span><span>CVD <b>${fmt(b.cvd,0)}</b></span>`;
-  } else { book.className='empty'; book.textContent='—'; }
+      <span>Vol <b>${b.volume}</b></span><span>CVD <b>${fmt(b.cvd,0)}</b></span>`;
+  } else { book.className='empty book-nums'; book.textContent='—'; }
+  updateImbalance(S);
 
   const rows=(S.trades||[]).slice().reverse();
   $('trades').innerHTML=
