@@ -269,8 +269,8 @@ function render(S){
 
   const b=S.last_bar, book=$('book');
   if(b){ book.className='book-nums';
-    book.innerHTML = bnCell('Bid', pfmt(b.best_bid)) + bnCell('Ask', pfmt(b.best_ask))
-      + bnCell('Vol', b.volume==null?'—':b.volume) + bnCell('CVD', fmt(b.cvd,0));
+    book.innerHTML = bnCell('Bid', pfmt(b.best_bid)) + bnCell('Vol', b.volume==null?'—':b.volume)
+      + bnCell('Ask', pfmt(b.best_ask)) + bnCell('CVD', fmt(b.cvd,0));
   } else { book.className='book-nums empty'; book.textContent='—'; }
   updateImbalance(S);
 
