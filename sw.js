@@ -24,3 +24,25 @@ self.addEventListener('fetch', e => {
   // App-Shell: erst Netz, dann Cache-Fallback.
   e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
 });
+
+// Push-Nachricht empfangen und als Benachrichtigung anzeigen.
+self.addEventListener('push', e => {
+  let d = { title: 'DayTrading', body: 'Trade' };
+  try { d = e.data.json(); } catch (_) { if (e.data) d.body = e.data.text(); }
+  e.waitUntil(self.registration.showNotification(d.title || 'DayTrading', {
+    body: d.body || '',
+    icon: 'icon-180.png',
+    badge: 'icon-180.png',
+    tag: d.tag || 'trade',
+    data: { url: './index.html' },
+  }));
+});
+
+// Tippen auf die Benachrichtigung -> App in den Vordergrund.
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  e.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+    for (const c of list) { if ('focus' in c) return c.focus(); }
+    if (clients.openWindow) return clients.openWindow('./index.html');
+  }));
+});

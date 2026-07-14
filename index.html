@@ -82,6 +82,9 @@
     color:#fff; font-size:15px; font-weight:600; }
   #login .msg { margin-top:14px; font-size:13px; color:var(--muted); min-height:20px; }
   .logout { float:right; font-size:11px; color:var(--muted); background:none; border:0; }
+  .notifbtn { width:100%; padding:10px; margin-bottom:14px; border-radius:10px; border:1px solid var(--accent);
+    background:color-mix(in srgb,var(--accent) 14%,transparent); color:var(--accent); font-size:13px; font-weight:600; }
+  .notifbtn:disabled { opacity:.6; }
   .hidden { display:none !important; }
 </style>
 </head>
@@ -101,6 +104,7 @@
   <h1>DayTrading Live <span class="pill" id="mode">PAPER</span>
     <button class="logout" id="logout">abmelden</button></h1>
   <div class="status"><span class="dot stale" id="dot"></span><span id="statusline">verbinde …</span></div>
+  <button id="notifbtn" class="notifbtn hidden">🔔 Trade-Benachrichtigungen aktivieren</button>
   <div class="banner" id="banner"></div>
   <div class="cards" id="cards"></div>
   <div class="panel"><h2>Live-Buch</h2>
@@ -153,6 +157,8 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 const SUPABASE_URL = 'https://btvjlpaiyqmyfordyfgw.supabase.co';
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ0dmpscGFpeXFteWZvcmR5Zmd3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM5OTAyODgsImV4cCI6MjA5OTU2NjI4OH0.W8Ek0HwE6E0EqbrsULDknHM8E6sk7I2NBrkJepiKIUU';
 
+const VAPID_APP_KEY = 'BBN-Zs--mzEPUNLEBDH6CVqYNkdAdz5DwuiUSaFFDPwHVqQJ3lhDDoc6yPZkAXbDlMICgQu4W3HwtOCxq5WlpuA';
+
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON);
 const $ = id => document.getElementById(id);
 const fmt = (x,d=2)=> x==null?'—':(x>=0?'+':'')+Number(x).toFixed(d);
@@ -163,7 +169,38 @@ let lastData = 0, pollTimer = null, channel = null;
 
 // --- Auth ---------------------------------------------------------------
 function showLogin(){ $('login').classList.remove('hidden'); $('appview').classList.add('hidden'); }
-function showApp(){ $('login').classList.add('hidden'); $('appview').classList.remove('hidden'); startData(); }
+function showApp(){ $('login').classList.add('hidden'); $('appview').classList.remove('hidden'); startData(); initPush(); }
+
+// --- Web-Push-Anmeldung --------------------------------------------------
+function urlB64ToUint8(base64){
+  const pad='='.repeat((4-base64.length%4)%4);
+  const b=(base64+pad).replace(/-/g,'+').replace(/_/g,'/');
+  const raw=atob(b); return Uint8Array.from([...raw].map(c=>c.charCodeAt(0)));
+}
+async function initPush(){
+  const btn=$('notifbtn');
+  if(!('serviceWorker' in navigator) || !('PushManager' in window)){ return; }
+  let reg; try { reg=await navigator.serviceWorker.ready; } catch(_) { return; }
+  const existing=await reg.pushManager.getSubscription();
+  if(existing && Notification.permission==='granted'){ btn.classList.add('hidden'); return; }
+  btn.classList.remove('hidden');
+  btn.textContent='🔔 Trade-Benachrichtigungen aktivieren'; btn.disabled=false;
+  btn.onclick=async()=>{
+    btn.disabled=true; btn.textContent='aktiviere …';
+    try{
+      const perm=await Notification.requestPermission();
+      if(perm!=='granted'){ btn.textContent='Erlaubnis abgelehnt — ggf. in iOS-Einstellungen freigeben'; return; }
+      const sub=await reg.pushManager.subscribe({userVisibleOnly:true, applicationServerKey:urlB64ToUint8(VAPID_APP_KEY)});
+      const j=sub.toJSON();
+      const { data:{ user } }=await sb.auth.getUser();
+      const { error }=await sb.from('push_subscriptions').upsert(
+        {endpoint:j.endpoint, p256dh:j.keys.p256dh, auth:j.keys.auth, email:user.email},
+        {onConflict:'endpoint'});
+      if(error){ btn.textContent='Fehler beim Speichern: '+error.message; btn.disabled=false; return; }
+      btn.classList.add('hidden');
+    }catch(e){ btn.textContent='Fehler: '+e.message; btn.disabled=false; }
+  };
+}
 
 async function doSignIn(){
   const email = $('email').value.trim();
