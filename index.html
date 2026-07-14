@@ -64,9 +64,10 @@
 <!-- Login-Ansicht -->
 <div id="login" class="hidden">
   <h1>DayTrading Live <span class="pill">PAPER</span></h1>
-  <p>Anmeldung per Magic-Link an deine E-Mail.</p>
-  <input id="email" type="email" inputmode="email" autocomplete="email" placeholder="E-Mail-Adresse">
-  <button id="sendlink">Magic-Link senden</button>
+  <p>Anmeldung mit E-Mail und Passwort.</p>
+  <input id="email" type="email" inputmode="email" autocomplete="username" placeholder="E-Mail-Adresse">
+  <input id="password" type="password" autocomplete="current-password" placeholder="Passwort">
+  <button id="signin">Anmelden</button>
   <div class="msg" id="loginmsg"></div>
 </div>
 
@@ -100,15 +101,17 @@ let lastData = 0, pollTimer = null, channel = null;
 function showLogin(){ $('login').classList.remove('hidden'); $('appview').classList.add('hidden'); }
 function showApp(){ $('login').classList.add('hidden'); $('appview').classList.remove('hidden'); startData(); }
 
-$('sendlink').addEventListener('click', async () => {
+async function doSignIn(){
   const email = $('email').value.trim();
-  if(!email){ $('loginmsg').textContent = 'Bitte E-Mail eingeben.'; return; }
-  $('sendlink').disabled = true; $('loginmsg').textContent = 'sende …';
-  const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: location.href.split('#')[0] } });
-  $('sendlink').disabled = false;
-  $('loginmsg').textContent = error ? ('Fehler: ' + error.message)
-    : 'Link gesendet. Öffne die Mail auf diesem Gerät und tippe auf den Link.';
-});
+  const password = $('password').value;
+  if(!email || !password){ $('loginmsg').textContent = 'E-Mail und Passwort eingeben.'; return; }
+  $('signin').disabled = true; $('loginmsg').textContent = 'anmelden …';
+  const { error } = await sb.auth.signInWithPassword({ email, password });
+  $('signin').disabled = false;
+  $('loginmsg').textContent = error ? ('Fehler: ' + error.message) : '';
+}
+$('signin').addEventListener('click', doSignIn);
+$('password').addEventListener('keydown', e => { if(e.key === 'Enter') doSignIn(); });
 
 $('logout').addEventListener('click', async () => { await sb.auth.signOut(); location.reload(); });
 
