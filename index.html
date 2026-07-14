@@ -48,10 +48,18 @@
   th { color:var(--muted); font-weight:500; font-size:11px; }
   td.pos { color:var(--pos); } td.neg { color:var(--neg); }
   .tag { display:inline-block; padding:1px 6px; border-radius:5px; font-size:10px; background:var(--panel2); color:var(--muted); }
-  .log { font-family:ui-monospace,Menlo,monospace; font-size:11px; color:var(--muted); max-height:180px; overflow-y:auto; white-space:pre-wrap; }
+  .log { font-size:11px; color:var(--muted); max-height:200px; overflow-y:auto; }
+  .log .le { padding:3px 0; line-height:1.4; word-break:break-word; border-bottom:1px solid color-mix(in srgb,var(--line) 45%,transparent); }
+  .log .le:last-child { border-bottom:0; }
+  .log .le .t { color:var(--accent); margin-right:7px; font-variant-numeric:tabular-nums; font-family:ui-monospace,Menlo,monospace; }
   .empty { color:var(--muted); }
+  /* Live-Buch Zahlen: festes Raster, damit nichts springt */
+  .book-nums { display:grid; grid-template-columns:1fr 1fr; gap:7px 18px; margin-bottom:16px; font-size:13px; }
+  .book-nums.empty { display:block; }
+  .bn { display:flex; justify-content:space-between; align-items:baseline; }
+  .bn .lb { color:var(--muted); }
+  .bn .vv { font-weight:600; font-variant-numeric:tabular-nums; }
   /* Imbalance-Anzeige */
-  .book-nums { margin-bottom:14px; }
   .imbhead { display:flex; align-items:baseline; gap:8px; margin-bottom:8px; }
   .imbtitle { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
   .imbraw { color:var(--muted); font-size:10px; font-variant-numeric:tabular-nums; }
@@ -95,7 +103,6 @@
   <div class="status"><span class="dot stale" id="dot"></span><span id="statusline">verbinde …</span></div>
   <div class="banner" id="banner"></div>
   <div class="cards" id="cards"></div>
-  <div class="panel"><h2>Aktuelle Position</h2><div id="position" class="empty">—</div></div>
   <div class="panel"><h2>Live-Buch</h2>
     <div id="book" class="row book-nums empty">—</div>
     <div id="imbwrap" class="hidden">
@@ -133,6 +140,7 @@
       </div>
     </div>
   </div>
+  <div class="panel"><h2>Aktuelle Position</h2><div id="position" class="empty">—</div></div>
   <div class="panel"><h2>Trades heute</h2><div style="overflow-x:auto"><table id="trades"></table></div></div>
   <div class="panel"><h2>Log</h2><div class="log" id="log"></div></div>
 </div>
@@ -148,6 +156,9 @@ const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFz
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON);
 const $ = id => document.getElementById(id);
 const fmt = (x,d=2)=> x==null?'—':(x>=0?'+':'')+Number(x).toFixed(d);
+const pfmt = x => x==null?'—':Number(x).toFixed(2);   // Preise, immer 2 Nachkommastellen
+const bnCell = (l,v) => `<div class="bn"><span class="lb">${l}</span><span class="vv">${v}</span></div>`;
+const esc = s => String(s).replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 let lastData = 0, pollTimer = null, channel = null;
 
 // --- Auth ---------------------------------------------------------------
@@ -257,10 +268,10 @@ function render(S){
   } else { pos.className='empty'; pos.textContent='keine offene Position'; }
 
   const b=S.last_bar, book=$('book');
-  if(b){ book.className='row book-nums';
-    book.innerHTML=`<span>Bid <b>${b.best_bid}</b></span><span>Ask <b>${b.best_ask}</b></span>
-      <span>Vol <b>${b.volume}</b></span><span>CVD <b>${fmt(b.cvd,0)}</b></span>`;
-  } else { book.className='empty book-nums'; book.textContent='—'; }
+  if(b){ book.className='book-nums';
+    book.innerHTML = bnCell('Bid', pfmt(b.best_bid)) + bnCell('Ask', pfmt(b.best_ask))
+      + bnCell('Vol', b.volume==null?'—':b.volume) + bnCell('CVD', fmt(b.cvd,0));
+  } else { book.className='book-nums empty'; book.textContent='—'; }
   updateImbalance(S);
 
   const rows=(S.trades||[]).slice().reverse();
@@ -272,7 +283,14 @@ function render(S){
       <td class="${rc}">${fmt(t.pnl_usd,0)}</td></tr>`;}).join('')
       || `<tr><td colspan="5" class="empty">noch keine Trades</td></tr>`);
 
-  $('log').textContent=(S.log||[]).join('\n');
+  const logEl=$('log');
+  logEl.innerHTML=(S.log||[]).map(line=>{
+    const sp=line.indexOf(' ');
+    const t = sp>0 ? line.slice(0,sp) : '';
+    const msg = esc(sp>0 ? line.slice(sp+1) : line);
+    return `<div class="le"><span class="t">${t}</span>${msg}</div>`;
+  }).join('');
+  logEl.scrollTop=logEl.scrollHeight;
 }
 
 if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
