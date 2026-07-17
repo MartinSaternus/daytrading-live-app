@@ -107,45 +107,16 @@
   <button id="notifbtn" class="notifbtn hidden">🔔 Trade-Benachrichtigungen aktivieren</button>
   <div class="banner" id="banner"></div>
   <div class="cards" id="cards"></div>
-  <div class="panel"><h2>Live-Buch</h2>
-    <div id="book" class="row book-nums empty">—</div>
-    <div id="imbwrap" class="hidden">
-      <div class="imbhead">
-        <span class="imbtitle">Imbalance imb5 · <span class="imbraw" id="imbraw">roh —</span></span>
-        <span class="imbval" id="imbval">+0.00</span>
-        <span class="imbsig sig" id="imbsig">neutral</span>
-      </div>
-      <svg id="imbmeter" viewBox="0 0 320 46" aria-hidden="true">
-        <rect x="0" y="14" width="45.7" height="18" rx="5" fill="var(--pos)" opacity="0.10"/>
-        <rect x="274.3" y="14" width="45.7" height="18" rx="5" fill="var(--neg)" opacity="0.10"/>
-        <rect x="0" y="21" width="320" height="4" rx="2" fill="var(--line)"/>
-        <rect id="imbfill" x="160" y="21" width="0" height="4" rx="2" fill="var(--accent)"/>
-        <line x1="45.7" y1="10" x2="45.7" y2="36" stroke="var(--pos)" stroke-width="1.3" stroke-dasharray="3 3"/>
-        <line x1="274.3" y1="10" x2="274.3" y2="36" stroke="var(--neg)" stroke-width="1.3" stroke-dasharray="3 3"/>
-        <line x1="160" y1="7" x2="160" y2="39" stroke="var(--muted)" stroke-width="1.3"/>
-        <circle id="imbraw2" cx="160" cy="23" r="3.5" fill="none" stroke="var(--muted)" stroke-width="1.4"/>
-        <circle id="imbcur" cx="160" cy="23" r="6" fill="var(--accent)" stroke="var(--panel)" stroke-width="2"/>
-        <text class="gl" x="46" y="45" text-anchor="middle">-0.5</text>
-        <text class="gl" x="160" y="45" text-anchor="middle">0</text>
-        <text class="gl" x="274" y="45" text-anchor="middle">+0.5</text>
-        <text class="zl" x="2" y="10" fill="var(--pos)">◄ LONG</text>
-        <text class="zl" x="318" y="10" text-anchor="end" fill="var(--neg)">SHORT ►</text>
-      </svg>
-      <svg id="imbhist" viewBox="0 0 320 46" aria-hidden="true">
-        <line x1="0" y1="6.6" x2="320" y2="6.6" stroke="var(--neg)" stroke-width="1" stroke-dasharray="2 3" opacity="0.55"/>
-        <line x1="0" y1="23" x2="320" y2="23" stroke="var(--muted)" stroke-width="1" opacity="0.4"/>
-        <line x1="0" y1="39.4" x2="320" y2="39.4" stroke="var(--pos)" stroke-width="1" stroke-dasharray="2 3" opacity="0.55"/>
-        <polyline id="imbtrail" fill="none" stroke="var(--accent)" stroke-width="1.5" points=""/>
-      </svg>
-      <div class="imbfoot">
-        <span><span class="gdot" style="background:var(--pos)"></span>≤ −0.5 → Long</span>
-        <span><span class="gdot" style="background:var(--neg)"></span>≥ +0.5 → Short</span>
-        <span>Verlauf ~letzte Minuten</span>
-      </div>
-    </div>
+  <div class="panel"><h2>Overnight MNQ · long 15:59 → 09:30 ET</h2>
+    <div id="ovnight" class="empty">—</div>
+    <div id="book" class="row book-nums empty" style="margin-top:10px">—</div>
   </div>
-  <div class="panel"><h2>Aktuelle Position</h2><div id="position" class="empty">—</div></div>
-  <div class="panel"><h2>Trades heute</h2><div style="overflow-x:auto"><table id="trades"></table></div></div>
+  <div class="panel"><h2>Aktien-Scanner · Auswahl 21:50 (15:50 ET)</h2>
+    <div id="scanmeta" class="empty" style="font-size:12px;margin-bottom:8px">warte auf ersten Scan …</div>
+    <div style="overflow-x:auto"><table id="scantable"></table></div>
+  </div>
+  <div class="panel"><h2>Nächstes Makro-Event (Fade-Beobachtung)</h2><div id="event" class="empty">—</div></div>
+  <div class="panel"><h2>Overnight-Trades</h2><div style="overflow-x:auto"><table id="trades"></table></div></div>
   <div class="panel"><h2>Log</h2><div class="log" id="log"></div></div>
 </div>
 
@@ -225,10 +196,14 @@ function startData(){
   if(pollTimer) return;              // nur einmal starten
   fetchState();
   pollTimer = setInterval(fetchState, 2000);
+  fetchScan();
+  setInterval(fetchScan, 60000);
   setInterval(updateDot, 1000);
   channel = sb.channel('live_state_ch')
     .on('postgres_changes', { event:'UPDATE', schema:'public', table:'live_state' },
         p => { lastData = Date.now(); render(p.new.state); })
+    .on('postgres_changes', { event:'UPDATE', schema:'public', table:'overnight_scan' },
+        p => renderScan(p.new.state))
     .subscribe();
 }
 
@@ -243,40 +218,26 @@ function updateDot(){
   if(age>10){ $('dot').className='dot stale'; $('statusline').textContent='letztes Update vor '+(age|0)+'s (läuft die Session?)'; }
 }
 
-// --- Imbalance-Anzeige (±0.7 gezoomt, Trigger bei ±0.5) -----------------
-const IMB_MAX=0.7, IMB_CX=160, IMB_MID=23, IMB_H=23;
-const imbX = v => IMB_CX + Math.max(-IMB_MAX,Math.min(IMB_MAX,v))/IMB_MAX*IMB_CX;
-const imbY = v => IMB_MID - Math.max(-IMB_MAX,Math.min(IMB_MAX,v))/IMB_MAX*IMB_H;
-let imbHist=[];
-function updateImbalance(S){
-  const wrap=$('imbwrap');
-  const raw = S.last_bar ? S.last_bar.imbalance_5 : null;
-  let sm = (S.imb5_smoothed!=null) ? S.imb5_smoothed : raw;   // geglättet bevorzugt
-  const thr = S.imb5_threshold || 0.5;
-  if(sm==null){ wrap.classList.add('hidden'); return; }
-  wrap.classList.remove('hidden');
-
-  const col = sm<=-thr ? 'var(--pos)' : sm>=thr ? 'var(--neg)' : 'var(--accent)';
-  const px = imbX(sm);
-  const cur=$('imbcur'); cur.setAttribute('cx',px.toFixed(1)); cur.setAttribute('fill',col);
-  const fill=$('imbfill');
-  if(px>=IMB_CX){ fill.setAttribute('x',IMB_CX); fill.setAttribute('width',(px-IMB_CX).toFixed(1)); }
-  else { fill.setAttribute('x',px.toFixed(1)); fill.setAttribute('width',(IMB_CX-px).toFixed(1)); }
-  fill.setAttribute('fill',col);
-  if(raw!=null) $('imbraw2').setAttribute('cx',imbX(raw).toFixed(1));
-
-  $('imbval').textContent=(sm>=0?'+':'')+sm.toFixed(2); $('imbval').style.color=col;
-  $('imbraw').textContent='roh '+(raw==null?'—':(raw>=0?'+':'')+raw.toFixed(2));
-  const sig=$('imbsig');
-  sig.className='imbsig sig'+(sm<=-thr?' long':sm>=thr?' short':'');
-  sig.textContent = sm<=-thr?'LONG-Signal':sm>=thr?'SHORT-Signal':'neutral';
-
-  imbHist.push(sm); if(imbHist.length>100) imbHist.shift();
-  if(imbHist.length>1){
-    const n=imbHist.length;
-    $('imbtrail').setAttribute('points',
-      imbHist.map((v,i)=>(i/(n-1)*320).toFixed(1)+','+imbY(v).toFixed(1)).join(' '));
-  }
+// --- Scanner-Zustand (overnight_scan, Poll 60s + Realtime) ---------------
+async function fetchScan(){
+  const { data, error } = await sb.from('overnight_scan').select('state').eq('id',1).single();
+  if(!error && data) renderScan(data.state);
+}
+function renderScan(sc){
+  if(!sc || !sc.updated){ return; }
+  const meta=$('scanmeta');
+  const when=new Date(sc.updated).toLocaleString('de-DE',{weekday:'short',hour:'2-digit',minute:'2-digit'});
+  meta.className='';
+  meta.innerHTML=`<b>${sc.n_candidates??0}</b> Kandidaten · Scan ${when}`
+    + ` · ${sc.scanned??'?'} geprüft`
+    + (sc.delayed?` · <span class="tag">DELAYED 15min</span>`:'');
+  const rows=(sc.candidates||[]);
+  $('scantable').innerHTML=
+    `<tr><th>Symbol</th><th>Kurs</th><th>Vol×Ø20</th><th>CLV</th></tr>`+
+    (rows.map(c=>`<tr><td><b>${esc(c.symbol)}</b></td><td>${pfmt(c.last)}</td>`+
+      `<td>${c.vol_ratio==null?'—':Number(c.vol_ratio).toFixed(1)}×</td>`+
+      `<td>${c.clv==null?'—':Number(c.clv).toFixed(2)}</td></tr>`).join('')
+     || `<tr><td colspan="4" class="empty">keine Kandidaten heute Nacht</td></tr>`);
 }
 
 function render(S){
@@ -289,36 +250,47 @@ function render(S){
   else if(S.in_position){ banner.className='banner show pos'; banner.textContent='Position offen'; }
   else banner.className='banner';
 
+  const ov=S.overnight||{};
+  const stateTxt = ov.halt?'HALT':(ov.state==='LONG'?'IM MARKT':'bereit');
   $('cards').innerHTML=[
-    ['P&L heute', fmt(S.total_r,1)+' R', (S.total_r>=0?'pos':'neg'), fmt(S.total_usd,0)+' USD'],
-    ['Status', S.halted?'HALT':(S.in_position?'im Markt':'bereit'), (S.halted?'neg':''), (S.trades_today||0)+' Trades heute'],
-    ['Trades', S.n_trades||0, '', 'Win '+Math.round((S.win_rate||0)*100)+' %'],
-    ['P&L-Tag', (S.total_r||0)>=0?'grün':'rot', ((S.total_r||0)>=0?'pos':'neg'), fmt(S.total_r,1)+' R'],
+    ['P&L gesamt', fmt(S.total_usd,0)+' $', ((S.total_usd||0)>=0?'pos':'neg'), 'Overnight-Paper seit 16.07.'],
+    ['Overnight', stateTxt, (ov.halt?'neg':(ov.state==='LONG'?'pos':'')),
+      ov.state==='LONG' ? ('unrealisiert '+fmt(ov.unreal_usd,0)+' $') : 'Einstieg 21:59 dt. Zeit'],
   ].map(([l,v,c,s])=>`<div class="card"><div class="label">${l}</div>
      <div class="value ${c}">${v}</div><div class="sub">${s}</div></div>`).join('');
 
-  const pos=$('position');
-  if(S.in_position && S.position){ const p=S.position;
-    pos.className='row';
-    pos.innerHTML=`<span><b>${p.direction}</b> ${p.remaining} MNQ</span><span>Einstieg <b>${p.entry_px}</b></span>
-      <span>Stop <b>${p.stop_px}</b></span><span>${p.scaled?'Runner':'voll'}</span>`;
-  } else { pos.className='empty'; pos.textContent='keine offene Position'; }
+  const on=$('ovnight');
+  if(ov.state==='LONG'){
+    on.className='row';
+    on.innerHTML=`<span><b>LONG</b> ${ov.qty||1} ${esc(S.symbol||'MNQ')}</span>`
+      +`<span>Einstieg <b>${pfmt(ov.entry)}</b></span>`
+      +`<span>Server-Stop <b>${pfmt(ov.stop)}</b></span>`
+      +`<span class="${(ov.unreal_usd||0)>=0?'pos':'neg'}" style="color:var(--${(ov.unreal_usd||0)>=0?'pos':'neg'})"><b>${fmt(ov.unreal_usd,0)} $</b></span>`;
+  } else {
+    on.className='empty';
+    on.textContent = ov.halt ? 'HALT aktiv — kein Einstieg heute Nacht'
+      : 'flat · nächster Einstieg 15:59 ET (21:59 dt. Zeit) · Exit 09:30 ET';
+  }
 
   const b=S.last_bar, book=$('book');
   if(b){ book.className='book-nums';
-    book.innerHTML = bnCell('Bid', pfmt(b.best_bid)) + bnCell('Vol', b.volume==null?'—':b.volume)
-      + bnCell('Ask', pfmt(b.best_ask)) + bnCell('CVD', fmt(b.cvd,0));
+    book.innerHTML = bnCell('Kurs', pfmt(b.close)) + bnCell('Bid', pfmt(b.best_bid))
+      + bnCell('Ask', pfmt(b.best_ask)) + bnCell('Stand', (b.timestamp||'').slice(11,19)+' UTC');
   } else { book.className='book-nums empty'; book.textContent='—'; }
-  updateImbalance(S);
+
+  const ev=$('event');
+  if(S.next_event){ ev.className='row';
+    ev.innerHTML=`<span><b>${esc(S.next_event.type)}</b></span><span>${esc(S.next_event.date)}</span>`
+      +`<span>${esc(S.next_event.utc)} UTC</span><span class="tag">nur Beobachtung, keine Order</span>`;
+  } else { ev.className='empty'; ev.textContent='—'; }
 
   const rows=(S.trades||[]).slice().reverse();
   $('trades').innerHTML=
-    `<tr><th>Ein</th><th>Richtung</th><th>Aus</th><th>R</th><th>USD</th></tr>`+
-    (rows.map(t=>{const rc=t.r_multiple>=0?'pos':'neg';
-      return `<tr><td>${(t.entry_ts||'').slice(11,19)}</td><td>${t.direction>0?'Long':'Short'}</td>
-      <td><span class="tag">${t.exit_reason}</span></td><td class="${rc}">${fmt(t.r_multiple)}</td>
-      <td class="${rc}">${fmt(t.pnl_usd,0)}</td></tr>`;}).join('')
-      || `<tr><td colspan="5" class="empty">noch keine Trades</td></tr>`);
+    `<tr><th>Zeit (UTC)</th><th>Aktion</th><th>Preis</th><th>USD</th></tr>`+
+    (rows.map(t=>{const rc=(t.pnl_usd||0)>=0?'pos':'neg';
+      return `<tr><td>${esc(t.ts||'')}</td><td><span class="tag">${esc(t.action||'')}</span></td>
+      <td>${pfmt(t.price)}</td><td class="${t.action==='ENTRY'?'':rc}">${t.action==='ENTRY'?'—':fmt(t.pnl_usd,0)}</td></tr>`;}).join('')
+      || `<tr><td colspan="4" class="empty">noch keine Trades</td></tr>`);
 
   const logEl=$('log');
   logEl.innerHTML=(S.log||[]).map(line=>{
