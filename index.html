@@ -228,9 +228,18 @@ function renderScan(sc){
   const meta=$('scanmeta');
   const when=new Date(sc.updated).toLocaleString('de-DE',{weekday:'short',hour:'2-digit',minute:'2-digit'});
   meta.className='';
+  let settleLine='';
+  if(sc.settle && sc.settle.nights && sc.settle.nights.length){
+    const n=sc.settle.nights[sc.settle.nights.length-1];
+    const col=(n.bp||0)>=0?'var(--pos)':'var(--neg)';
+    settleLine=`<br>Abrechnung ${esc(n.date)}: ${n.n} Positionen, `
+      +`<b style="color:${col}">${(n.bp>=0?'+':'')}${Number(n.bp).toFixed(1)} bp</b>`
+      +(sc.settle.avg_bp!=null?` · Ø über ${sc.settle.total_nights} Nächte: ${Number(sc.settle.avg_bp).toFixed(1)} bp`:'');
+  }
   meta.innerHTML=`<b>${sc.n_candidates??0}</b> Kandidaten · Scan ${when}`
     + ` · ${sc.scanned??'?'} geprüft`
-    + (sc.delayed?` · <span class="tag">DELAYED 15min</span>`:'');
+    + (sc.delayed?` · <span class="tag">DELAYED 15min</span>`:'')
+    + settleLine;
   const rows=(sc.candidates||[]);
   $('scantable').innerHTML=
     `<tr><th>Symbol</th><th>Kurs</th><th>Vol×Ø20</th><th>CLV</th></tr>`+
@@ -243,7 +252,7 @@ function renderScan(sc){
 function render(S){
   if(!S || !S.updated){ $('statusline').textContent='warte auf ersten Push der Session …'; return; }
   $('dot').className='dot'+(S.halted?' halt':'');
-  $('statusline').textContent=`${S.account||''} · ${S.symbol||''} · ${new Date(S.updated).toLocaleTimeString()}`;
+  $('statusline').textContent=`${S.status||((S.account||'')+' · '+(S.symbol||''))} · ${new Date(S.updated).toLocaleTimeString()}`;
 
   const banner=$('banner');
   if(S.halted){ banner.className='banner show halt'; banner.textContent='ANGEHALTEN: '+(S.halt_reason||''); }
@@ -266,6 +275,12 @@ function render(S){
       +`<span>Einstieg <b>${pfmt(ov.entry)}</b></span>`
       +`<span>Server-Stop <b>${pfmt(ov.stop)}</b></span>`
       +`<span class="${(ov.unreal_usd||0)>=0?'pos':'neg'}" style="color:var(--${(ov.unreal_usd||0)>=0?'pos':'neg'})"><b>${fmt(ov.unreal_usd,0)} $</b></span>`;
+  } else if(S.in_position && S.position){
+    const p=S.position;                       // Event-Fade-Beobachtung (keine Order)
+    on.className='row';
+    on.innerHTML=`<span><b>${esc(p.side||'')}</b> <span class="tag">Event-Beobachtung</span></span>`
+      +`<span>Referenz <b>${pfmt(p.entry)}</b></span>`
+      +`<span style="color:var(--${(p.unrealized_pt||0)>=0?'pos':'neg'})"><b>${fmt(p.unrealized_pt,1)} pt</b></span>`;
   } else {
     on.className='empty';
     on.textContent = ov.halt ? 'HALT aktiv — kein Einstieg heute Nacht'
