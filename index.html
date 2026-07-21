@@ -236,10 +236,18 @@ function renderScan(sc){
       +`<b style="color:${col}">${(n.bp>=0?'+':'')}${Number(n.bp).toFixed(1)} bp</b>`
       +(sc.settle.avg_bp!=null?` · Ø über ${sc.settle.total_nights} Nächte: ${Number(sc.settle.avg_bp).toFixed(1)} bp`:'');
   }
+  let orderLine='';
+  if(sc.orders && sc.orders.n>0){
+    orderLine=`<br><b style="color:var(--accent)">${sc.orders.n} Positionen GEKAUFT</b>`
+      +` · ${Number(sc.orders.invested_usd).toLocaleString('de-DE')} $ investiert`
+      +` · OPG-Verkäufe für die Eröffnung platziert`;
+  } else if(sc.orders){
+    orderLine=`<br><span class="tag">keine Orders (Halt/kein Fill)</span>`;
+  }
   meta.innerHTML=`<b>${sc.n_candidates??0}</b> Kandidaten · Scan ${when}`
     + ` · ${sc.scanned??'?'} geprüft`
     + (sc.delayed?` · <span class="tag">DELAYED 15min</span>`:'')
-    + settleLine;
+    + orderLine + settleLine;
   const rows=(sc.candidates||[]);
   $('scantable').innerHTML=
     `<tr><th>Symbol</th><th>Kurs</th><th>Vol×Ø20</th><th>CLV</th></tr>`+
