@@ -260,12 +260,13 @@ function renderScan(sc){
 
 function render(S){
   if(!S || !S.updated){ $('statusline').textContent='warte auf ersten Push der Session …'; return; }
-  $('dot').className='dot'+(S.halted?' halt':'');
+  // Systemweite Störung nur bei echtem Verbindungsproblem (Status mit ⚠).
+  const sysWarn = typeof S.status==='string' && S.status.indexOf('⚠')>=0;
+  $('dot').className='dot'+(sysWarn?' halt':'');
   $('statusline').textContent=`${S.status||((S.account||'')+' · '+(S.symbol||''))} · ${new Date(S.updated).toLocaleTimeString()}`;
 
   const banner=$('banner');
-  if(S.halted){ banner.className='banner show halt'; banner.textContent='ANGEHALTEN: '+(S.halt_reason||''); }
-  else if(S.in_position){ banner.className='banner show pos'; banner.textContent='Position offen'; }
+  if(sysWarn){ banner.className='banner show halt'; banner.textContent=S.status; }
   else banner.className='banner';
 
   const ov=S.overnight||{};
