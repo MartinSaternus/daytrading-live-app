@@ -231,10 +231,14 @@ function renderScan(sc){
   let settleLine='';
   if(sc.settle && sc.settle.nights && sc.settle.nights.length){
     const n=sc.settle.nights[sc.settle.nights.length-1];
-    const col=(n.bp||0)>=0?'var(--pos)':'var(--neg)';
-    settleLine=`<br>Abrechnung ${esc(n.date)}: ${n.n} Positionen, `
-      +`<b style="color:${col}">${(n.bp>=0?'+':'')}${Number(n.bp).toFixed(1)} bp</b>`
-      +(sc.settle.avg_bp!=null?` · Ø über ${sc.settle.total_nights} Nächte: ${Number(sc.settle.avg_bp).toFixed(1)} bp`:'');
+    const rb=n.real_bp!=null?n.real_bp:n.bp, ab=n.auction_bp!=null?n.auction_bp:n.bp;
+    const rc=(rb||0)>=0?'var(--pos)':'var(--neg)';
+    settleLine=`<br>Abrechnung ${esc(n.date)} · ${n.n} Pos: `
+      +`<b style="color:${rc}">real ${(rb>=0?'+':'')}${Number(rb).toFixed(1)} bp</b>`
+      +` <span style="color:var(--muted)">(Auktion ${(ab>=0?'+':'')}${Number(ab).toFixed(1)} bp)</span>`;
+    if(sc.settle.avg_real_bp!=null)
+      settleLine+=`<br><span style="color:var(--muted)">Ø ${sc.settle.total_nights} Nächte: `
+        +`real ${Number(sc.settle.avg_real_bp).toFixed(1)} / Auktion ${Number(sc.settle.avg_auction_bp).toFixed(1)} bp</span>`;
   }
   let orderLine='';
   if(sc.orders && sc.orders.n>0){
