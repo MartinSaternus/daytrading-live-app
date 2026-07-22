@@ -238,9 +238,10 @@ function renderScan(sc){
   }
   let orderLine='';
   if(sc.orders && sc.orders.n>0){
-    orderLine=`<br><b style="color:var(--accent)">${sc.orders.n} Positionen GEKAUFT</b>`
+    const lev=(sc.orders.leverage&&sc.orders.leverage>1.01)?` <span class="tag" style="background:color-mix(in srgb,var(--warn) 22%,transparent);color:var(--warn)">${sc.orders.leverage}× HEBEL</span>`:'';
+    orderLine=`<br><b style="color:var(--accent)">${sc.orders.n} Positionen GEKAUFT</b>${lev}`
       +` · ${Number(sc.orders.invested_usd).toLocaleString('de-DE')} $ investiert`
-      +` · OPG-Verkäufe für die Eröffnung platziert`;
+      +` · Verkauf zur Eröffnung`;
   } else if(sc.orders){
     orderLine=`<br><span class="tag">keine Orders (Halt/kein Fill)</span>`;
   }
