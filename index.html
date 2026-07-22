@@ -107,16 +107,16 @@
   <button id="notifbtn" class="notifbtn hidden">🔔 Trade-Benachrichtigungen aktivieren</button>
   <div class="banner" id="banner"></div>
   <div class="cards" id="cards"></div>
-  <div class="panel"><h2>Overnight MNQ · long 15:59 → 09:30 ET</h2>
+  <div class="panel"><h2>① MNQ Futures · long 15:59 → 09:30 ET</h2>
     <div id="ovnight" class="empty">—</div>
     <div id="book" class="row book-nums empty" style="margin-top:10px">—</div>
   </div>
-  <div class="panel"><h2>Aktien-Scanner · Auswahl 21:50 (15:50 ET)</h2>
+  <div class="panel"><h2>② Aktien-Scanner · Auswahl 21:50 · Verkauf zur Eröffnung</h2>
     <div id="scanmeta" class="empty" style="font-size:12px;margin-bottom:8px">warte auf ersten Scan …</div>
     <div style="overflow-x:auto"><table id="scantable"></table></div>
   </div>
   <div class="panel"><h2>Nächstes Makro-Event (Fade-Beobachtung)</h2><div id="event" class="empty">—</div></div>
-  <div class="panel"><h2>Overnight-Trades</h2><div style="overflow-x:auto"><table id="trades"></table></div></div>
+  <div class="panel"><h2>① MNQ-Trades</h2><div style="overflow-x:auto"><table id="trades"></table></div></div>
   <div class="panel"><h2>Log</h2><div class="log" id="log"></div></div>
 </div>
 
@@ -269,11 +269,16 @@ function render(S){
   else banner.className='banner';
 
   const ov=S.overnight||{};
-  const stateTxt = ov.halt?'HALT':(ov.state==='LONG'?'IM MARKT':'bereit');
+  const eq=S.equity||null;
+  const mnqReal=S.mnq_realized_usd!=null?S.mnq_realized_usd:S.total_usd;
+  const mnqNow = ov.state==='LONG' ? ('offen '+fmt(ov.unreal_usd,0)+'$ · real '+fmt(mnqReal,0)+'$')
+                                   : (ov.halt?'PAUSIERT · real '+fmt(mnqReal,0)+'$':'real '+fmt(mnqReal,0)+'$');
+  const eqVal = eq ? (eq.n>0 ? fmt(eq.unreal_usd,0)+' $' : '—') : '—';
+  const eqSub = eq&&eq.n>0 ? (`${eq.n} Pos · ${fmt(eq.unreal_bp,1)} bp offen`) : 'nachts gekauft, morgens verkauft';
   $('cards').innerHTML=[
-    ['P&L gesamt', fmt(S.total_usd,0)+' $', ((S.total_usd||0)>=0?'pos':'neg'), 'Overnight-Paper seit 16.07.'],
-    ['Overnight', stateTxt, (ov.halt?'neg':(ov.state==='LONG'?'pos':'')),
-      ov.state==='LONG' ? ('unrealisiert '+fmt(ov.unreal_usd,0)+' $') : 'Einstieg 21:59 dt. Zeit'],
+    ['① MNQ Futures', ov.halt?'PAUSIERT':(ov.state==='LONG'?fmt(ov.unreal_usd,0)+' $':fmt(mnqReal,0)+' $'),
+      (ov.halt?'neg':((ov.state==='LONG'?ov.unreal_usd:mnqReal)>=0?'pos':'neg')), mnqNow],
+    ['② Aktien-Scanner', eqVal, (eq&&eq.n>0?(eq.unreal_usd>=0?'pos':'neg'):''), eqSub],
   ].map(([l,v,c,s])=>`<div class="card"><div class="label">${l}</div>
      <div class="value ${c}">${v}</div><div class="sub">${s}</div></div>`).join('');
 
